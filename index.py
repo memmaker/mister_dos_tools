@@ -4,7 +4,7 @@ import struct
 import sys
 import os
 from pathlib import Path
-
+import csv
 from create_run_bat import create_run_bat_in_dir
 
 filesIDX = 'FILES.IDX'
@@ -91,8 +91,9 @@ def readFileIndex(filesIDX):
     for counter in range(count):
         index = struct.unpack('<H', f.read(2))[0]
         name_bytes = f.read(12)
-        name = name_bytes.decode().strip()
-        print('Found: %s - %s' % (index, name))
+        name = name_bytes.decode().strip("\x00")
+        # print('Found: %s - %s' % (index, name))
+        # print('Decoded name %s with length %s' % (name, name_bytes))
         filenames.append(name)
     f.close()
     return filenames
@@ -104,14 +105,14 @@ def readTitleIndex(titlesIDX):
     count = struct.unpack('<H', f.read(2))[0]
     for i in range(count):
         offset = struct.unpack('<L', f.read(4))[0]
-        print('Found offset: ' + str(offset))
+        # print('Found offset: ' + str(offset))
     for i in range(count):
         index = struct.unpack('<H', f.read(2))[0]
         hash_bytes = f.read(16)
         title_len = struct.unpack('B', f.read(1))[0]
         title_bytes = f.read(title_len)
         title = title_bytes.decode(encoding='latin_1').strip()
-        print('Found: %s - %s' % (index, title))
+        # print('Found: %s - %s' % (index, title))
         titles.append(title)
 
     f.close()
@@ -138,7 +139,9 @@ def generateTitleIndex(titlesIDX, titles):
         thash = hashlib.md5(name.encode()).digest()
         f.write(thash)
         # write titleLen
-        f.write(struct.pack('B', len(name)))
+        name_length = len(name)
+        # print('Encoding length %s for %s' % (name_length, name))
+        f.write(struct.pack('B', name_length))
         # write title itself
         f.write(name.encode(encoding='latin_1'))
     f.close()
@@ -210,9 +213,9 @@ def save_title(title, title_path):
 def indexDirectory(src_dir):
     record_data = []
     for f in os.listdir(src_dir):
-        if not os.path.isfile(f) and not os.path.islink(f):
+        full_path = os.path.join(src_dir, f)
+        if not os.path.isfile(full_path) and not os.path.islink(full_path):
             print('Found directory %s' % (f,))
-            full_path = os.path.join(src_dir, f)
             run_path = os.path.join(src_dir, f, 'run.bat')
             if not os.path.exists(run_path) or not os.path.isfile(run_path):
                 print('WARNING: No run.bat for %s' % (f,))
@@ -233,7 +236,7 @@ def indexDirectory(src_dir):
             if len(short_name) > 8:
                 print('WARNING: Directory name is too long for DOS.')
                 short_name = get_user_short_name(generateShortName(f))
-
+            print(short_name)
             record_data.append({
                 'title': title,
                 'full_path': full_path,
@@ -276,6 +279,32 @@ def get_user_short_name(short_name):
             current_name = user_short_name[0:8].upper()
 
 
+def write_csv(file, data):
+    with open(file, 'w') as csvfile:
+        writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for record in data:
+            row_data = [record['title'], record['file']]
+            print(row_data)
+            writer.writerow(row_data)
+
+
+def read_csv(file):
+    index_data = []
+    with open(file) as csvfile:
+        reader = csv.reader(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for row in reader:
+            index_data.append({
+                'title': row[0],
+                'file': row[1]
+            })
+    return index_data
+
+
+def display_data(list_of_records):
+    for i, record in enumerate(list_of_records):
+        print('%s. [%s] %s' % (i, record['file'], record['title']))
+
+
 if len(sys.argv) > 1:
     command = str(sys.argv[1])
     print('Command: ' + command)
@@ -286,8 +315,8 @@ if len(sys.argv) > 1:
         insertTitle(at_index, game_filename, game_title)
     elif command == 'show':
         source_directory = os.path.abspath(sys.argv[2])
-        readFileIndex(os.path.join(source_directory, filesIDX))
-        readTitleIndex(os.path.join(source_directory, titlesIDX))
+        data_list = read_all_indices(source_directory)
+        display_data(data_list)
     elif command == 'remove':
         at_index = int(sys.argv[2])
         removeByIndex(at_index)
@@ -312,3 +341,14 @@ if len(sys.argv) > 1:
     elif command == 'title_convert':
         source_directory = os.path.abspath(sys.argv[2])
         lfn_to_title_files(source_directory)
+    elif command == 'index_to_csv':
+        source_directory = os.path.abspath(sys.argv[2])
+        csv_path = os.path.join(source_directory, '_index.csv')
+        data_list = read_all_indices(source_directory)
+        write_csv(csv_path, data_list)
+    elif command == 'csv_to_index':
+        source_directory = os.path.abspath(sys.argv[2])
+        csv_path = os.path.join(source_directory, '_index.csv')
+        data_list = read_csv(csv_path)
+        data_list.sort(key=sort_key)
+        write_index_list(data_list, source_directory)
