@@ -288,14 +288,15 @@ def recreate_batch_files(src_dir):
             start_path = os.path.join(root_dir, '1_Start.bat')
             if os.path.exists(start_path) and os.path.isfile(start_path):
                 full_path = os.path.join(root_dir, short_name)  # go deeper one level
-                write_start_bat(root_dir, short_name)
-                run_path = os.path.join(full_path, 'RUN.BAT')
-                if os.path.exists(run_path) and os.path.isfile(run_path):
-                    with open(run_path, "r", encoding='latin-1', newline='\r\n') as run_file:
-                        run_commands = list(filter(lambda line: line, map(lambda line: line.strip('\r\n\t '), run_file.readlines())))
-                        write_run_bat_verbatim(full_path, run_commands)
-                else:
-                    create_run_bat_in_dir(full_path)
+                title_path = os.path.join(full_path, 'title.txt')
+                if os.path.exists(title_path) and os.path.isfile(title_path):
+                    write_start_bat(root_dir, short_name)
+                    run_path = os.path.join(full_path, 'RUN.BAT')
+                    if os.path.exists(run_path) and os.path.isfile(run_path):
+                        with open(run_path, "r", encoding='latin-1', newline='\r\n') as run_file:
+                            run_commands = list(filter(lambda line: line, map(lambda line: line.strip('\r\n\t '), run_file.readlines())))
+                            write_run_bat_verbatim(full_path, run_commands)
+
 
 
 def indexDirectory(src_dir):
