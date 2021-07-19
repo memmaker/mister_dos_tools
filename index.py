@@ -5,7 +5,7 @@ import sys
 import os
 from pathlib import Path
 import csv
-from create_run_bat import create_run_bat_in_dir
+from create_run_bat import create_run_bat_in_dir, write_run_bat_verbatim
 
 filesIDX = 'FILES.IDX'
 titlesIDX = 'TITLES.IDX'
@@ -62,9 +62,69 @@ def read_all_indices(directory):
     return data_list
 
 
-def merge_indices_sorted(list_one, list_two):
+def get_non_conflicting_filename(filename, set_of_known_filenames):
+    index = 2
+    filename_list = list(filename)
+    length = len(filename)
+    if length < 11:
+        filename_list.insert(length - 4, '_')
+        filename_list.insert(length - 4, '_')
+        length += 2
+    elif length < 12:
+        filename_list.insert(length - 4, '_')
+        length += 1
+    while True:
+        filename_list[length - 5] = str(index)
+        filename_string = ''.join(filename_list)
+        if filename_string not in set_of_known_filenames:
+            return filename_string
+        index += 1
+
+
+def check_duplicates(full_list, rename_dir):
+    # assumes list is sorted
+    last_filename = ''
+    set_of_filenames = set()
+    for i, record in enumerate(full_list):
+        if last_filename == record['file']:
+            print('Found duplicate filename "%s" for game %s' % (record['file'], record['title']))
+            new_filename = get_non_conflicting_filename(last_filename, set_of_filenames)
+            print('...renaming to %s' % new_filename)
+            full_list[i]['file'] = new_filename
+            change_filename(last_filename, new_filename, rename_dir)
+        else:
+            last_filename = record['file']
+            set_of_filenames.add(record['file'])
+    return full_list
+
+
+def change_filename(last_filename, new_filename, rename_dir):
+    old_path = os.path.join(rename_dir, 'FILES', last_filename)
+    new_path = os.path.join(rename_dir, 'FILES', new_filename)
+    os.rename(old_path, new_path)
+
+    old_short_name = os.path.splitext(last_filename)[0]
+    new_short_name = os.path.splitext(new_filename)[0]
+
+    old_root_dir = os.path.join(rename_dir, 'GAMES', old_short_name)
+    old_games_path = os.path.join(old_root_dir, old_short_name)
+
+    new_root_dir = os.path.join(rename_dir, 'GAMES', new_short_name)
+    new_games_path = os.path.join(new_root_dir, new_short_name)
+
+    ensure_dir_exists(new_root_dir)
+
+    os.rename(old_games_path, new_games_path)
+
+    write_start_bat(new_root_dir, new_short_name)
+    os.remove(os.path.join(old_root_dir, '1_Start.bat'))
+    os.rmdir(old_root_dir)
+
+
+def merge_indices_sorted(list_one, list_two, rename_dir):
     full_list = list_one + list_two
     full_list.sort(key=sort_key)
+    full_list = check_duplicates(full_list, rename_dir)
     return full_list
 
 
@@ -133,17 +193,19 @@ def generateTitleIndex(titlesIDX, titles):
     for tmpofs in toffsets:
         f.write(struct.pack('<L', tmpofs))
     for idx, name in enumerate(titles):
+        clean_name = name.replace('\xa0', u' ')
+        encoded_name = clean_name.encode(encoding='latin_1')
         # write titleID
         f.write(struct.pack('<H', idx))
         # write titleHash
-        thash = hashlib.md5(name.encode()).digest()
+        thash = hashlib.md5(encoded_name).digest()
         f.write(thash)
         # write titleLen
-        name_length = len(name)
+        name_length = len(clean_name)
         # print('Encoding length %s for %s' % (name_length, name))
         f.write(struct.pack('B', name_length))
         # write title itself
-        f.write(name.encode(encoding='latin_1'))
+        f.write(encoded_name)
     f.close()
 
 
@@ -186,18 +248,27 @@ def directoryToIndex(src_dir, target_dir, do_move=False, do_create_zips=True):
             game_sub_dir = os.path.join(game_dir, record['short_name'])
             ensure_dir_exists(game_dir)
             os.rename(record['full_path'], game_sub_dir)
-            start_bat = os.path.join(game_dir, '1_Start.bat')
-
-            file = open(start_bat, 'w')
-            file.writelines([
-                '@ECHO OFF\n',
-                'cd %s\n' % (record['short_name'],),
-                'call run.bat\n'
-            ])
-            file.close()
-
+            write_start_bat(game_dir, record['short_name'])
+    print('\n*********************************\n')
     generateFileIndex(file_idx, file_list)
     generateTitleIndex(title_idx, title_list)
+
+
+def write_start_bat(game_dir, short_name):
+    start_bat = os.path.join(game_dir, '1_Start.bat')
+    file = open(start_bat, 'w', newline='\r\n', encoding="latin-1")
+
+    list_of_commands = [
+        '@ECHO OFF',
+        'cd %s' % short_name,
+        'call run.bat'
+    ]
+
+    commands_with_le = map(lambda c: c + '\n', filter(lambda c: c.strip('\r\n\t '), list_of_commands))
+
+    file.writelines(commands_with_le)
+
+    file.close()
 
 
 def ensure_dir_exists(dir_path):
@@ -210,17 +281,36 @@ def save_title(title, title_path):
         text_file.write(title)
 
 
+def recreate_batch_files(src_dir):
+    for short_name in os.listdir(src_dir):
+        root_dir = os.path.join(src_dir, short_name)
+        if not os.path.isfile(root_dir) and not os.path.islink(root_dir):
+            start_path = os.path.join(root_dir, '1_Start.bat')
+            if os.path.exists(start_path) and os.path.isfile(start_path):
+                full_path = os.path.join(root_dir, short_name)  # go deeper one level
+                write_start_bat(root_dir, short_name)
+                run_path = os.path.join(full_path, 'RUN.BAT')
+                with open(run_path, "r", encoding='latin-1', newline='\r\n') as run_file:
+                    run_commands = list(filter(lambda line: line, map(lambda line: line.strip('\r\n\t '), run_file.readlines())))
+                    write_run_bat_verbatim(full_path, run_commands)
+
+
 def indexDirectory(src_dir):
     record_data = []
     for f in os.listdir(src_dir):
         full_path = os.path.join(src_dir, f)
         if not os.path.isfile(full_path) and not os.path.islink(full_path):
-            print('Found directory %s' % (f,))
-            run_path = os.path.join(src_dir, f, 'run.bat')
+            print('\n*********************************\n\nFound directory %s' % (f,))
+            start_path = os.path.join(full_path, '1_Start.bat')
+
+            if os.path.exists(start_path) and os.path.isfile(start_path):
+                full_path = os.path.join(full_path, f) # go deeper one level
+
+            run_path = os.path.join(full_path, 'RUN.BAT')
             if not os.path.exists(run_path) or not os.path.isfile(run_path):
                 print('WARNING: No run.bat for %s' % (f,))
                 create_run_bat_in_dir(full_path)
-            title_path = os.path.join(src_dir, f, 'title.txt')
+            title_path = os.path.join(full_path, 'title.txt')
             if not os.path.exists(title_path) or not os.path.isfile(title_path):
                 print('WARNING: No title.txt for %s' % (f,))
                 title = input('Please input title (ENTER = Folder Name): ')
@@ -229,14 +319,13 @@ def indexDirectory(src_dir):
                 save_title(title, title_path)
             else:
                 title = Path(title_path).read_text().strip()
-            print(' ...' + title)
+            print(' ...found title "%s"' % title)
 
             short_name = f
 
             if len(short_name) > 8:
                 print('WARNING: Directory name is too long for DOS.')
                 short_name = get_user_short_name(generateShortName(f))
-            print(short_name)
             record_data.append({
                 'title': title,
                 'full_path': full_path,
@@ -335,7 +424,7 @@ if len(sys.argv) > 1:
 
         data_one = read_all_indices(source_directory_one)
         data_two = read_all_indices(source_directory_two)
-        data_list = merge_indices_sorted(data_one, data_two)
+        data_list = merge_indices_sorted(data_one, data_two, source_directory_one)
 
         write_index_list(data_list, target_directory)
     elif command == 'title_convert':
@@ -352,3 +441,6 @@ if len(sys.argv) > 1:
         data_list = read_csv(csv_path)
         data_list.sort(key=sort_key)
         write_index_list(data_list, source_directory)
+    elif command == 'rebat':
+        source_directory = os.path.abspath(sys.argv[2])
+        recreate_batch_files(source_directory)

@@ -6,11 +6,21 @@ import termios
 
 def write_run_bat(directory, command):
     run_bat_path = os.path.join(directory, 'RUN.BAT')
-    run_bat = open(run_bat_path, 'w')
-    run_bat.writelines([
-        '@ECHO OFF\n',
-        command + '\n',
-    ])
+    run_bat = open(run_bat_path, 'w', newline='\r\n', encoding="latin-1")
+    list_of_commands = [
+        '@ECHO OFF',
+        command
+    ]
+    commands_with_le = map(lambda c: c + '\n', filter(lambda c: c.strip('\r\n\t '), list_of_commands))
+    run_bat.writelines(commands_with_le)
+    run_bat.close()
+
+
+def write_run_bat_verbatim(directory, list_of_commands):
+    run_bat_path = os.path.join(directory, 'RUN.BAT')
+    run_bat = open(run_bat_path, 'w', newline='\r\n', encoding="latin-1")
+    commands_with_le = map(lambda c: c + '\n', filter(lambda c: c.strip('\r\n\t '), list_of_commands))
+    run_bat.writelines(commands_with_le)
     run_bat.close()
 
 
