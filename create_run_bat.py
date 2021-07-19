@@ -1,7 +1,5 @@
 import os
-import sys
-import tty
-import termios
+from getchar import get_char
 
 
 def write_run_bat(directory, command):
@@ -22,17 +20,6 @@ def write_run_bat_verbatim(directory, list_of_commands):
     commands_with_le = map(lambda c: c + '\n', filter(lambda c: c.strip('\r\n\t '), list_of_commands))
     run_bat.writelines(commands_with_le)
     run_bat.close()
-
-
-def getchar():
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
 
 
 def get_executables(directory):
@@ -58,7 +45,7 @@ def create_run_bat_in_dir(directory):
     for i, choice in enumerate(all_files):
         print(' %s. %s' % (i+1, choice))
 
-    user_choice = int(getchar()) - 1
+    user_choice = int(get_char()) - 1
 
     chosen_file = all_files[user_choice]
     file_parts = os.path.splitext(chosen_file)
