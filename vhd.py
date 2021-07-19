@@ -93,16 +93,23 @@ def attachVHD(vhd_filename):
 # attachVHD('test.vhd')
 if not is_admin_user():
     print('MUST BE RUN AS ADMIN')
-if len(sys.argv) == 2:
-    size_in_mb = int(sys.argv[1])
-    vhd_file = os.path.abspath(sys.argv[2])
-    print('Size (MB): %s, VHD: %s' % (size_in_mb, vhd_file))
-    createVHD(size_in_mb, vhd_file)
-    detachVHD(vhd_file)
+    sys.exit(1)
 
-elif len(sys.argv) == 3:
-    directory = sys.argv[1]
-    vhd_file = sys.argv[2]
-    print('Dir: %s, VHD: %s' % (directory, vhd_file))
-    dirToVHD(directory, vhd_file)
-    detachVHD(vhd_file)
+if len(sys.argv) == 4:
+    command = sys.argv[1]
+    if command == 's':
+        size_in_mb = int(sys.argv[2])
+        vhd_file = os.path.abspath(sys.argv[3])
+        print('Size (MB): %s, VHD: %s' % (size_in_mb, vhd_file))
+        createVHD(size_in_mb, vhd_file)
+        detachVHD(vhd_file)
+        sys.exit(0)
+    elif command == 'd':
+        directory = sys.argv[2]
+        vhd_file = sys.argv[3]
+        print('Dir: %s, VHD: %s' % (directory, vhd_file))
+        dirToVHD(directory, vhd_file)
+        detachVHD(vhd_file)
+        sys.exit(0)
+
+print('Usage:\n vhd s [SIZE IN MB] [VHD FILE]\n vhd d [DIRECTORY] [VHD FILE]')
